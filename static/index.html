@@ -1,0 +1,55 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Oncall Memory</title>
+<style>
+:root{--bg:#eef1ef;--ink:#15211e;--mut:#5c6b66;--line:#c9d2ce;--acc:#0f6b5f;--bad:#b3261e;--card:#fbfcfb}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 Georgia,'Times New Roman',serif}
+h1,h2,button,label,.mono{font-family:'Segoe UI',system-ui,sans-serif}
+header{padding:28px 32px 8px}h1{margin:0;font-size:28px;letter-spacing:-.5px}header p{margin:4px 0 0;color:var(--mut);max-width:60ch}
+main{display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:24px;padding:20px 32px 40px}
+@media(max-width:820px){main{grid-template-columns:1fr;padding:16px}}
+section{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:18px}
+h2{font-size:15px;margin:0 0 10px}
+textarea,input{width:100%;border:1px solid var(--line);border-radius:4px;padding:10px;font:inherit;background:#fff}
+textarea{min-height:110px;resize:vertical}
+button{border:0;border-radius:4px;padding:9px 14px;background:var(--acc);color:#fff;font-weight:600;cursor:pointer}
+button.ghost{background:transparent;color:var(--acc);border:1px solid var(--acc)}button.bad{background:var(--bad)}
+button:focus-visible,textarea:focus-visible,input:focus-visible{outline:3px solid #7fc4b9;outline-offset:1px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.toggle{display:flex;gap:8px;align-items:center;font-weight:600}
+.mem{border-left:3px solid var(--acc);padding:6px 10px;margin:6px 0;background:#eef6f4;font-size:13.5px}
+.mem.fail{border-color:var(--bad);background:#fbeeed}
+pre{white-space:pre-wrap;font:inherit;margin:0}.tag{font-size:12px;color:var(--mut)}
+.stack>*+*{margin-top:16px}
+</style></head><body>
+<header><h1>Oncall Memory</h1><p>An incident copilot that remembers every past outage, what fixed it, and what didn't. Flip memory off to see the difference.</p></header>
+<main>
+<div class="stack">
+<section><h2>New alert</h2>
+<textarea id="alert" placeholder="e.g. checkout-api p99 latency 4s, Redis ETIMEDOUT after deploy"></textarea>
+<div class="row"><label class="toggle"><input type="checkbox" id="mem" checked style="width:auto"> Use team memory</label></div>
+<div class="row"><button id="go">Triage alert</button><button class="ghost" id="seed">Load sample incidents</button></div></section>
+<section><h2>Log the outcome</h2>
+<input id="fix" placeholder="Fix you applied">
+<div class="row"><button id="ok">It worked</button><button class="bad" id="no">It didn't work</button></div>
+<p class="tag" id="saved"></p></section>
+</div>
+<div class="stack">
+<section><h2>Recommendation</h2><pre id="ans">Submit an alert to get started.</pre></section>
+<section><h2>Recalled incidents</h2><div id="mems" class="tag">None yet.</div></section>
+<section><h2>Patterns the agent has learned</h2><div class="row" style="margin:0 0 10px"><button class="ghost" id="ins">Reflect on all incidents</button></div><pre id="insight"></pre></section>
+</div></main>
+<script>
+const $=id=>document.getElementById(id);
+const api=async(p,b)=>(await fetch(p,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{})).json();
+const busy=(el,t,f)=>async()=>{const o=el.textContent;el.disabled=true;el.textContent=t;try{await f()}catch(e){alert(e)}el.disabled=false;el.textContent=o};
+$('go').onclick=busy($('go'),'Thinking…',async()=>{
+ if(!$('alert').value.trim())return;$('ans').textContent='…';
+ const r=await api('/api/triage',{alert:$('alert').value,use_memory:$('mem').checked});
+ $('ans').textContent=r.answer;
+ $('mems').innerHTML=r.memories.length?r.memories.map(m=>`<div class="mem ${/DID NOT WORK/.test(m)?'fail':''}">${m.replace(/</g,'&lt;')}</div>`).join(''):'No memory used for this answer.';});
+$('seed').onclick=busy($('seed'),'Loading…',async()=>{const r=await api('/api/seed',{});$('saved').textContent=`Loaded ${r.seeded} incidents.`});
+const res=w=>busy($(w?'ok':'no'),'Saving…',async()=>{if(!$('alert').value||!$('fix').value)return alert('Enter the alert and the fix.');
+ await api('/api/resolve',{alert:$('alert').value,fix:$('fix').value,worked:w});$('saved').textContent='Outcome saved. The next triage will use it.'});
+$('ok').onclick=res(true);$('no').onclick=res(false);
+$('ins').onclick=busy($('ins'),'Reflecting…',async()=>{$('insight').textContent=(await api('/api/insights')).text});
+</script></body></html>
